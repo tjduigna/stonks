@@ -1,0 +1,71 @@
+# -*- coding: utf-8 -*-
+# Copyright 2020, Stonks Development Team
+# Distributed under the terms of the Apache License 2.0
+
+from collections import defaultdict
+
+from traitlets.config.configurable import Configurable
+from traitlets import Unicode, List
+
+from imapclient import IMAPClient
+
+
+class Mailbox(Configurable):
+    """Configurable IMAP client wrapper."""
+    user = Unicode().tag(config=True)
+    pwd = Unicode().tag(config=True)
+    hostname = Unicode().tag(config=True)
+    folder = Unicode().tag(config=True)
+    broker = Unicode().tag(config=True)
+    filters = List().tag(config=True)
+
+    def fetch_envelopes(self, c):
+        """Get all email ids coming from the broker
+        email address and filter them by key words
+        in the subject of the email."""
+        print('fetching envelopes')
+        msgs = c.search(['FROM', self.broker])
+        envs = c.fetch(msgs, ['ENVELOPE'])
+        emails_by_name = defaultdict(list)
+        for idx, data in envs.items():
+            env = data[b'ENVELOPE']
+            subject = env.subject.decode('utf-8')
+            if any((fil in subject for
+                    fil in self.filters)):
+                emails_by_name[subject].append(idx)
+        print(f'fetched {len(emails_by_name)} subjects')
+        return emails_by_name
+
+    def fetch_bodies(self, c, emails_by_name):
+        """Get the plain text bodies of the previously
+        filtered emails. Chunks the fetch by unique
+        subject lines.
+
+        Returns:
+            {subject: [(idx, body), ...]}
+        """
+        print('fetching bodies in chunks')
+        orders = defaultdict(list)
+        for subject, idxs in emails_by_name.items():
+            # TODO : get body structure to
+            #        assert text/plain is BODY[1]
+            bodies = c.fetch(idxs, ['BODY[1]'])
+            for idx, data in bodies.items():
+                body = data[b'BODY[1]'].decode('utf-8')
+                orders[subject].append((idx, body))
+        return orders
+
+    def fetch_orders(self):
+        """Gets all broker emails from the email address
+        according to the configurations set in the cfg.py
+        file."""
+        print("fetching orders:", self.hostname)
+        # TODO : make mailbox optionally accept a watermark
+        #        so that cached data need not be re-pulled
+        with IMAPClient(host=self.hostname) as c:
+            c.login(self.user, self.pwd)
+            c.select_folder(self.folder, readonly=True)
+            emails_by_name = self.fetch_envelopes(c)
+            orders = self.fetch_bodies(c, emails_by_name)
+        return orders
+
