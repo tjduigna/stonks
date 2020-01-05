@@ -6,7 +6,7 @@ import sys
 from functools import partial
 
 from traitlets.config.application import Application
-from traitlets import Unicode
+from traitlets import Unicode, default
 import pandas as pd
 
 from stonks import _root
@@ -18,7 +18,11 @@ _here = partial(os.path.join, _root, 'conf')
 
 class App(Application):
     cfg_file = Unicode(_here('cfg.py')).tag(config=True)
-    sec_file = Unicode(_here('pwd.py')).tag(config=True)
+    sec_file = Unicode().tag(config=True)
+
+    @default('sec_file')
+    def _default_sec_file(self):
+        return os.environ.get('STONKS_SECRETS', _here('pwd.py'))
 
     def initialize(self, argv=None):
         self.parse_command_line(argv)

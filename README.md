@@ -15,8 +15,12 @@ python app.py --App.cfg_file='/path/to/file' --App.sec_file='/path/to/other'
 ```
 `sec_file` is loaded second and overrides `cfg_file` and is meant for sensitive
 data, e.g.
+
 ```python
 c.Mailbox.user = ''
 c.Mailbox.pwd = ''
 c.Processor.total_deposit = float
 ```
+
+Rather than having to provide the command line argument to the secrets file,
+its path can be set with the environment variable, `STONKS_SECRETS`.
