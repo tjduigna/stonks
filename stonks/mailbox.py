@@ -11,7 +11,17 @@ from imapclient import IMAPClient
 
 
 class Mailbox(Configurable):
-    """Configurable IMAP client wrapper."""
+    """Configurable IMAP client wrapper.
+    The idea is to first fetch envelopes and search
+    through subject lines containing key words found
+    in the config based filters. Then a second round
+    of fetches is made to get the plain text body of
+    the email.
+
+    The main entry point is the fetch_orders method
+    and returns a dictionary of the following structure:
+        {subject: [(idx, body), ...]}
+    """
     user = Unicode().tag(config=True)
     pwd = Unicode().tag(config=True)
     hostname = Unicode().tag(config=True)

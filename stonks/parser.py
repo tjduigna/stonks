@@ -3,16 +3,31 @@
 # Distributed under the terms of the Apache License 2.0
 
 from traitlets.config.configurable import Configurable
-from traitlets import List, Int
+from traitlets import List, Int, Instance
 
 from .record import Record
+from .mailbox import Mailbox
 
 
-class Parser(Configurable):
-    """A robinhood specific plain/text parser"""
+class EmailParser(Configurable):
+    """A robinhood specific plain/text parser.
+    The purpose is to find the minimal string in
+    the text body containing the relevant transaction
+    and then attempt to structure that data into
+    proper records.
+
+    The main entry point is the parse_orders method
+    which expects a dictionary of the structure produced
+    by the Mailbox's fetch_orders method.
+
+    The keep variable that gets passed around would
+    be better suited as a deque based on copious
+    use of what amounts to popleft.
+    """
     stop_phrases = List().tag(config=True)
     stop_chars = List().tag(config=True)
     debug = Int().tag(config=True)
+    mailbox = Instance(Mailbox)
     months = {
         'January': 1, 'February': 2,
         'March': 3, 'April': 4, 'May': 5,
@@ -31,7 +46,7 @@ class Parser(Configurable):
         print(fmtr.format(*fmt), end=' ')
         print(extra or '')
 
-    def parse_orders(self, bodies):
+    def parse_orders(self):
         """Iterate over the emails, do some simple
         configurable text normalization and then
         attempt to parse the email into a record.
@@ -40,11 +55,10 @@ class Parser(Configurable):
         class, as well as a list of all email bodies
         that were not parsed.
         """
+        bodies = self.mailbox.fetch_orders()
         nrec = sum((len(bods) for bods in bodies.values()))
         print(f'parsing {nrec} orders')
-        records = []
-        not_parsed = []
-        cnt, tot = 0, 0
+        records, not_parsed = [], []
         for subject, bods in bodies.items():
             print(f'{len(bods)} with subject: {subject}')
             if self.debug:
@@ -72,6 +86,8 @@ class Parser(Configurable):
                         print(str(e), bod)
         print(f'parsed {len(records)} records')
         print(f'missed {len(not_parsed)} emails')
+        if len(not_parsed):
+            print('make c.EmailParser.debug > 1 to see bodies not parsed')
         return records, not_parsed
 
     def determine_order_type(self, r, keep):
@@ -81,8 +97,11 @@ class Parser(Configurable):
         streamline all other methods.
         """
         if r['direction'] == 'open':
-            count, r['ticker'], r['kind'], _, *keep = keep
-            r['count'] = int(count)
+            r['direction'] = 'buy'
+            r['kind'] = 'contract'
+            count, r['ticker'], multi, _, *keep = keep
+            degen, r['strike'] = multi.split('-')
+            r['count'] = int(count) * int(degen)
         else:
             if r['order_type'] == 'Your':
                 r['kind'] = 'crypto'
@@ -226,3 +245,16 @@ class Parser(Configurable):
                          r.get('unfilled_amount'),
                          r.get('partial_price')))
         return Record(**r)
+
+
+class StatementParser(Configurable):
+    debug = Int().tag(config=True)
+
+    def parse_orders(self):
+        dumps = {}
+        for path in self.statements[:1]:
+            with open(path, 'r') as f:
+                dumps[path] = f.read()
+            print("len split on portfolio", len(dumps[path].split(self.tokens[0])))
+            print("len split on activity", len(dumps[path].split(self.tokens[1])))
+

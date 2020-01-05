@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+# Copyright 2020, Stonks Development Team
+# Distributed under the terms of the Apache License 2.0
 """
 """
 import os
@@ -6,23 +8,31 @@ import sys
 from functools import partial
 
 from traitlets.config.application import Application
-from traitlets import Unicode, default
-import pandas as pd
+from traitlets import Unicode, default, validate
 
 from stonks import _root
 from stonks.mailbox import Mailbox
-from stonks.parser import Parser
+from stonks.parser import EmailParser, StatementParser
 from stonks.processor import Processor
 
+
 _here = partial(os.path.join, _root, 'conf')
+
 
 class App(Application):
     cfg_file = Unicode(_here('cfg.py')).tag(config=True)
     sec_file = Unicode().tag(config=True)
+    mode = Unicode('email').tag(config=True)
 
     @default('sec_file')
     def _default_sec_file(self):
         return os.environ.get('STONKS_SECRETS', _here('pwd.py'))
+
+    @validate('mode')
+    def _is_valid_mode(self, change):
+        if change.new not in ['email', 'dumps']:
+            raise Exception(f"validation error {change.new}")
+        return change.new
 
     def initialize(self, argv=None):
         self.parse_command_line(argv)
@@ -30,15 +40,21 @@ class App(Application):
             self.load_config_file(self.cfg_file)
         if self.sec_file:
             self.load_config_file(self.sec_file)
-        self.mailbox = Mailbox(config=self.config)
-        self.parser = Parser(config=self.config)
+        if self.mode == 'email':
+            self.parser = EmailParser(config=self.config,
+                                      mailbox=Mailbox(config=self.config))
+        else:
+            self.parser = StatementParser(config=self.config)
         self.processor = Processor(config=self.config)
 
     def run(self):
-        orders = self.mailbox.fetch_orders()
-        records, not_parsed = self.parser.parse_orders(orders)
-        df = self.processor.records_to_df(records)
-        self.processor.analyze(df)
+        records, not_parsed = self.parser.parse_orders()
+        if self.mode == 'email':
+            df = self.processor.records_to_df(records)
+            self.processor.analyze(df)
+        else:
+            print(records, not_parsed)
+            #records, not_parsed = self.parser.parse_orders()
 
 
 if __name__ == '__main__':
