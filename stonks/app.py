@@ -30,9 +30,9 @@ class App(Application):
 
     @validate('mode')
     def _is_valid_mode(self, change):
-        if change.new not in ['email', 'dumps']:
-            raise Exception(f"validation error {change.new}")
-        return change.new
+        if change.value not in ['email', 'dumps']:
+            raise Exception(f"validation error {change.value}")
+        return change.value
 
     def initialize(self, argv=None):
         self.parse_command_line(argv)

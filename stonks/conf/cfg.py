@@ -20,15 +20,38 @@ c.EmailParser.stop_phrases = [
 ]
 
 c.StatementParser.debug = 1
-c.StatementParser.tokens = [
-    'PORTFOLIO SUMMARY',
-    'ACCOUNT ACTIVITY',
+c.StatementParser.portfolio_token = 'PORTFOLIO SUMMARY'
+c.StatementParser.portfolio_tokens = [
+    'EQUITIES/OPTIONS',
+    'SYM/CUSIP',
+    'ACCT TYPE',
+    'QTY',
+    'PRICE',
+    'MKT VALUE',
+    'EST.ANNUAL INCOME',
+    '% OF TOTAL PORTFOLIO'
+]
+c.StatementParser.activity_token = 'ACCOUNT ACTIVITY'
+c.StatementParser.activity_tokens = [
+    'DESCRIPTION',
+    'SYMBOL',
+    'ACCT TYPE',
+    'TRANSACTION',
+    'DATE',
+    'QTY',
+    'PRICE',
+    'DEBIT',
+    'CREDIT'
 ]
 c.StatementParser.statements = [
-    '2019_09.txt',
-    '2019_10.txt',
-    '2019_11.txt',
-    '2019_12.txt',
+    '2019_09.pdf',
+    '2019_10.pdf',
+    '2019_11.pdf',
+    '2019_12.pdf',
+#    '2019_09.txt',
+#    '2019_10.txt',
+#    '2019_11.txt',
+#    '2019_12.txt',
 ]
 
 c.Processor.debug = 1

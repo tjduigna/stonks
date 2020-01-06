@@ -1,16 +1,24 @@
 # -*- coding: utf-8 -*-
 # Copyright 2020, Stonks Development Team
 # Distributed under the terms of the Apache License 2.0
+import os
+from io import StringIO
+from collections import defaultdict
 
 from traitlets.config.configurable import Configurable
-from traitlets import List, Int, Instance
+from traitlets import List, Int, Instance, Unicode
+
+from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
+from pdfminer.converter import TextConverter
+from pdfminer.layout import LAParams
+from pdfminer.pdfpage import PDFPage
 
 from .record import Record
 from .mailbox import Mailbox
 
 
 class EmailParser(Configurable):
-    """A robinhood specific plain/text parser.
+    """A robinhood specific plain/text email parser.
     The purpose is to find the minimal string in
     the text body containing the relevant transaction
     and then attempt to structure that data into
@@ -248,13 +256,100 @@ class EmailParser(Configurable):
 
 
 class StatementParser(Configurable):
+    """A robinhood specific plain text pdf statement parser.
+    Attempts a page-by-page determination of the content
+    in hopes to be less brittle.
+    """
     debug = Int().tag(config=True)
+    portfolio_token = Unicode().tag(config=True)
+    portfolio_tokens = List().tag(config=True)
+    activity_token = Unicode().tag(config=True)
+    activity_tokens = List().tag(config=True)
+    statements = List().tag(config=True)
+
+    def parse_txt_fmt(self, path):
+        with open(path, 'r') as f:
+            return f.read()
+
+    def parse_pdf_fmt(self, path):
+        resource = PDFResourceManager()
+        ret = StringIO()
+        dev = TextConverter(resource, ret, laparams=LAParams())
+        with open(path, 'rb') as f:
+            interp = PDFPageInterpreter(resource, dev)
+            pagenos = set()
+            for page in PDFPage.get_pages(
+                    f, pagenos, maxpages=0, password='',
+                    caching=True, check_extractable=True):
+                interp.process_page(page)
+            text = ret.getvalue()
+        dev.close()
+        ret.close()
+        return text
 
     def parse_orders(self):
-        dumps = {}
-        for path in self.statements[:1]:
-            with open(path, 'r') as f:
-                dumps[path] = f.read()
-            print("len split on portfolio", len(dumps[path].split(self.tokens[0])))
-            print("len split on activity", len(dumps[path].split(self.tokens[1])))
+        dumps = defaultdict(dict)
+        for path in self.statements:
+            print(f"reading {path}, exists {os.path.isfile(path)}")
+            ext = path.split('.')[-1]
+            raw = {'pdf': self.parse_pdf_fmt,
+                   'txt': self.parse_txt_fmt}[ext](path)
+            dumps[path]['raw'] = raw
+            self.parse_pages(path, dumps, raw)
+        return None, None
 
+    def parse_pages(self, path, dumps, text):
+        """This is not sufficient to parse the pdf"""
+        begin, *pages = text.split('Page ')
+        print(f"statement has {len(pages)} pages")
+        ports, acts = [], []
+        for i, page in enumerate(pages):
+            pageno, period, name_acct, addr, *norm = [
+                ln.strip() for ln in page.splitlines() if ln.strip()
+            ]
+            page = ' '.join((
+                ' '.join(ln.split()) for ln in page.splitlines()
+            ))
+            print(f"parsing page {pageno} {period} user * addr *")
+            print(page[:100])
+            headers = (pageno, period, name_acct, addr)
+            act = self.parse_activity(page)
+            if act is not None:
+                acts.append((*headers, act))
+
+    def parse_portfolio(self, page):
+        split = page.split(self.portfolio_tokens[0])
+        if len(split) == 1: return
+        split = ' '.join([self.portfolio_tokens[0], split[1]])
+        split = split.split(self.activity_token)[0]
+        split = split.split(self.portfolio_tokens[-1])[1].split()
+        #print("portfolio", len(split), split)
+
+    def parse_activity(self, page):
+        split = page.split(self.activity_tokens[0])
+        if len(split) == 1: return
+        split = ' '.join([self.activity_tokens[0], split[1]]).split()
+        good = []
+        # smh
+        while True:
+            try:
+                cnt = 0
+                while cnt < len(split) and split[cnt] in self.activity_tokens:
+                    cnt += 1
+                split = split[cnt:]
+                if '/' in split[1] and split[3].startswith('$'):
+                    good.append(('contract', *split[:4]))
+                    split = split[4:]
+                else:
+                    cnt = 0
+                    while 'CUSIP' not in split[cnt]:
+                        cnt += 1
+                    wordy = ' '.join(split[:cnt + 2])
+                    good.append(('share', wordy))
+                    split = split[cnt + 2:]
+            except IndexError:
+                break
+        print("activity", "split", len(split),
+              "line items", len(good),
+              good[0] if len(good) else None,
+              good[-1] if len(good) else None)
