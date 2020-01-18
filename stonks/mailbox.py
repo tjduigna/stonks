@@ -40,11 +40,17 @@ class Mailbox(Configurable):
         for idx, data in envs.items():
             env = data[b'ENVELOPE']
             subject = env.subject.decode('utf-8')
-            if any((fil in subject for
-                    fil in self.filters)):
-                emails_by_name[subject].append(idx)
+            # deprecate self.filters config
+            emails_by_name[subject].append(idx)
+        stop = ['login', 'account', 'statement', 'expiring']
+        orders = {
+            key: val for key, val in
+            emails_by_name.items()
+            if len(val) > 1 and
+            not any((s in key.lower().split() for s in stop))
+        }
         print(f'fetched {len(emails_by_name)} subjects')
-        return emails_by_name
+        return orders
 
     def fetch_bodies(self, c, emails_by_name):
         """Get the plain text bodies of the previously
